@@ -5,6 +5,40 @@ export function toIso(val) {
   return val instanceof Date ? val.toISOString() : String(val);
 }
 
+/** Always YYYY-MM-DD for PostgreSQL DATE columns (never "Fri Mar 15") */
+export function toDateOnly(val) {
+  if (val == null || val === '') return null;
+
+  if (typeof val === 'string') {
+    const iso = val.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (iso) return iso[1];
+    // Reject short locale leftovers like "Fri Mar 15" (no year → unreliable)
+    if (!/\d{4}/.test(val)) return null;
+    const parsed = new Date(val);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return localYmd(parsed);
+  }
+
+  if (val instanceof Date) {
+    if (Number.isNaN(val.getTime())) return null;
+    // Use local calendar day (pg DATE often arrives as local midnight)
+    return localYmd(val);
+  }
+
+  return null;
+}
+
+function localYmd(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function toDateOnlyOrEmpty(val) {
+  return toDateOnly(val) || '';
+}
+
 export function mapStaffRow(row) {
   return {
     id: row.id,
@@ -24,7 +58,7 @@ export function mapCustomerRow(row) {
     fullName: row.full_name,
     phone: row.phone,
     email: row.email || '',
-    dateOfBirth: row.date_of_birth ? String(row.date_of_birth).slice(0, 10) : null,
+    dateOfBirth: toDateOnly(row.date_of_birth),
     gender: row.gender,
     nationality: row.nationality,
     passportNumber: row.passport_number,
@@ -77,20 +111,21 @@ export function mapBookingRow(row) {
     bookedPrice: Number(row.booked_price),
     status: row.status,
     progress: row.progress,
+    progressManual: row.progress_manual ?? false,
     notes: row.notes || '',
     visaDocument: row.visa_document,
     ticketDocument: row.ticket_document,
     visaNumber: row.visa_number,
     visaType: row.visa_type,
     visaStatus: row.visa_status,
-    visaIssueDate: row.visa_issue_date ? String(row.visa_issue_date).slice(0, 10) : '',
-    visaExpiryDate: row.visa_expiry_date ? String(row.visa_expiry_date).slice(0, 10) : '',
+    visaIssueDate: toDateOnlyOrEmpty(row.visa_issue_date),
+    visaExpiryDate: toDateOnlyOrEmpty(row.visa_expiry_date),
     ticketAirline: row.ticket_airline,
     ticketFlightNo: row.ticket_flight_no,
     ticketFrom: row.ticket_from,
     ticketTo: row.ticket_to,
-    ticketDate: row.ticket_date ? String(row.ticket_date).slice(0, 10) : '',
-    ticketReturnDate: row.ticket_return_date ? String(row.ticket_return_date).slice(0, 10) : '',
+    ticketDate: toDateOnlyOrEmpty(row.ticket_date),
+    ticketReturnDate: toDateOnlyOrEmpty(row.ticket_return_date),
     ticketSeat: row.ticket_seat,
     ticketClass: row.ticket_class,
     ticketStatus: row.ticket_status,

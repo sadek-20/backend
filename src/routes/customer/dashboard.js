@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { requireCustomer } from '../../middleware/auth.js';
 import { query } from '../../db/pool.js';
+import { toDateOnlyOrEmpty } from '../../utils/mappers.js';
 
 const router = Router();
 
@@ -43,7 +44,7 @@ async function buildPayment(booking) {
     currency: 'USD',
     status: paymentStatus(total, paid),
     history: payments.map((p) => ({
-      date: String(p.created_at).slice(0, 10),
+      date: toDateOnlyOrEmpty(p.created_at),
       amount: Number(p.amount),
       method: p.method,
       status: 'paid',
@@ -88,8 +89,8 @@ router.get('/visa', async (req, res) => {
       number: booking.visa_number || '',
       type: booking.visa_type || '',
       status: booking.visa_status || 'pending',
-      issueDate: booking.visa_issue_date ? String(booking.visa_issue_date).slice(0, 10) : '',
-      expiryDate: booking.visa_expiry_date ? String(booking.visa_expiry_date).slice(0, 10) : '',
+      issueDate: toDateOnlyOrEmpty(booking.visa_issue_date),
+      expiryDate: toDateOnlyOrEmpty(booking.visa_expiry_date),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -117,8 +118,8 @@ router.get('/ticket', async (req, res) => {
       flightNo: booking.ticket_flight_no || '',
       from: booking.ticket_from || '',
       to: booking.ticket_to || '',
-      date: booking.ticket_date ? String(booking.ticket_date).slice(0, 10) : '',
-      returnDate: booking.ticket_return_date ? String(booking.ticket_return_date).slice(0, 10) : '',
+      date: toDateOnlyOrEmpty(booking.ticket_date),
+      returnDate: toDateOnlyOrEmpty(booking.ticket_return_date),
       seat: booking.ticket_seat || '',
       class: booking.ticket_class || '',
       status: booking.ticket_status || 'pending',
@@ -161,18 +162,16 @@ router.get('/dashboard', async (req, res) => {
         number: booking.visa_number || '',
         type: booking.visa_type || '',
         status: booking.visa_status || 'pending',
-        issueDate: booking.visa_issue_date ? String(booking.visa_issue_date).slice(0, 10) : '',
-        expiryDate: booking.visa_expiry_date ? String(booking.visa_expiry_date).slice(0, 10) : '',
+        issueDate: toDateOnlyOrEmpty(booking.visa_issue_date),
+        expiryDate: toDateOnlyOrEmpty(booking.visa_expiry_date),
       };
       ticket = {
         airline: booking.ticket_airline || '',
         flightNo: booking.ticket_flight_no || '',
         from: booking.ticket_from || '',
         to: booking.ticket_to || '',
-        date: booking.ticket_date ? String(booking.ticket_date).slice(0, 10) : '',
-        returnDate: booking.ticket_return_date
-          ? String(booking.ticket_return_date).slice(0, 10)
-          : '',
+        date: toDateOnlyOrEmpty(booking.ticket_date),
+        returnDate: toDateOnlyOrEmpty(booking.ticket_return_date),
         seat: booking.ticket_seat || '',
         class: booking.ticket_class || '',
         status: booking.ticket_status || 'pending',

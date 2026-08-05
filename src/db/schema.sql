@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS customers (
   id SERIAL PRIMARY KEY,
   serial_number VARCHAR(50) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  portal_password_enc TEXT,
   full_name VARCHAR(255) NOT NULL,
   name_en VARCHAR(255),
   name_ar VARCHAR(255),
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   booked_price NUMERIC(12, 2) NOT NULL,
   status VARCHAR(20) DEFAULT 'active',
   progress VARCHAR(50) DEFAULT 'New',
+  progress_manual BOOLEAN DEFAULT false,
   notes TEXT,
   visa_number VARCHAR(100),
   visa_type VARCHAR(100),
@@ -167,3 +169,6 @@ CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings(customer_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_package ON bookings(package_id);
 CREATE INDEX IF NOT EXISTS idx_payments_booking ON payments(booking_id);
 CREATE INDEX IF NOT EXISTS idx_documents_booking ON documents(booking_id);
+
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS progress_manual BOOLEAN DEFAULT false;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS portal_password_enc TEXT;
