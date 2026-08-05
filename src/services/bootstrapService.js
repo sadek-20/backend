@@ -147,7 +147,7 @@ export async function syncBootstrapData(data, userId) {
           toDateOnly(c.dateOfBirth), c.gender, c.nationality, c.passportNumber, c.address,
           c.emergencyContactName, c.emergencyContactPhone, c.emergencyContactRelation,
           c.guarantorName, c.guarantorPhone, c.guarantorRelation, c.notes || '',
-          photoPathForDb(c.photoUrl),
+          photoPathForDb(c.photoStoragePath || c.photoUrl),
           documentForDb(c.passportDocument),
           documentForDb(c.agreementDocument),
           c.createdAt || new Date(), c.createdBy || userId,
