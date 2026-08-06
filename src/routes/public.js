@@ -20,17 +20,23 @@ router.get('/packages', async (_req, res) => {
 
 router.post('/contact', async (req, res) => {
   try {
-    const { name, email, phone, message } = req.body;
+    const { name, email, phone, message } = req.body || {};
     if (!name || !message) return res.status(400).json({ error: 'Name and message required' });
 
     await query(
       `INSERT INTO contact_messages (name, email, phone, message) VALUES ($1,$2,$3,$4)`,
-      [name, email || null, phone || null, message]
+      [
+        String(name).slice(0, 200),
+        email ? String(email).slice(0, 255) : null,
+        phone ? String(phone).slice(0, 50) : null,
+        String(message).slice(0, 5000),
+      ]
     );
 
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Request failed' });
   }
 });
 

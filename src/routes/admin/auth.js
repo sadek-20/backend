@@ -10,14 +10,17 @@ const router = Router();
 
 router.post('/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password required' });
+    }
+    if (String(username).length > 100 || String(password).length > 200) {
+      return res.status(400).json({ error: 'Invalid credentials' });
     }
 
     const { rows } = await query(
       `SELECT * FROM staff_users WHERE LOWER(username) = LOWER($1) AND is_active = true`,
-      [username]
+      [String(username).trim()]
     );
 
     const user = rows[0];

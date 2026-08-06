@@ -8,8 +8,11 @@ import {
   encryptPortalPassword,
   decryptPortalPassword,
   getDefaultCustomerPassword,
-  staffRevealPinValid,
 } from '../../utils/portalPassword.js';
+import {
+  getStaffRevealPinStatus,
+  verifyStaffRevealPin,
+} from '../../services/settingsService.js';
 
 const router = Router();
 
@@ -35,10 +38,12 @@ router.get('/customers/:id/portal-credentials', async (req, res) => {
     const customer = await getCustomerRow(req.params.id);
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
+    const revealStatus = await getStaffRevealPinStatus();
     const payload = {
       serialNumber: customer.serial_number,
       masked: true,
-      canReveal: true,
+      canReveal: canViewWithoutPin(req.user.role) || revealStatus.canStaffReveal,
+      staffRevealEnabled: revealStatus.enabled,
     };
 
     if (canViewWithoutPin(req.user.role)) {
@@ -60,8 +65,9 @@ router.post('/customers/:id/reveal-password', async (req, res) => {
 
     if (!canViewWithoutPin(req.user.role)) {
       const { pin } = req.body || {};
-      if (!staffRevealPinValid(pin)) {
-        return res.status(403).json({ error: 'Invalid staff PIN' });
+      const check = await verifyStaffRevealPin(pin);
+      if (!check.ok) {
+        return res.status(403).json({ error: check.reason || 'Invalid staff PIN' });
       }
     }
 
@@ -77,17 +83,22 @@ router.post('/customers/:id/reveal-password', async (req, res) => {
 
 router.post('/customers/:id/password', async (req, res) => {
   try {
-    const { password } = req.body;
-    if (!password) return res.status(400).json({ error: 'Password required' });
+    if (!['admin', 'manager'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Manager access required' });
+    }
+    const { password } = req.body || {};
+    if (!password || String(password).length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
     const hash = await bcrypt.hash(password, 10);
     const enc = encryptPortalPassword(password);
     await query(
       `UPDATE customers SET password_hash = $1, portal_password_enc = $2 WHERE id = $3`,
       [hash, enc, req.params.id]
     );
-    res.json({ success: true, password });
+    res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Request failed' });
   }
 });
 

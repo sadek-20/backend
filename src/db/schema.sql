@@ -172,3 +172,5 @@ CREATE INDEX IF NOT EXISTS idx_documents_booking ON documents(booking_id);
 
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS progress_manual BOOLEAN DEFAULT false;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS portal_password_enc TEXT;
+ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS staff_reveal_pin_hash TEXT;
+ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS staff_reveal_enabled BOOLEAN DEFAULT false;

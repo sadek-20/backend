@@ -1,10 +1,10 @@
 /**
  * Admin API  →  /api/admin/*
- * Requires staff JWT (requireAdmin)
+ * Requires authenticated staff JWT (requireStaffAuth)
  */
 
 import { Router } from 'express';
-import { requireAdmin } from '../../middleware/auth.js';
+import { requireStaffAuth } from '../../middleware/auth.js';
 import bootstrapRoutes from './bootstrap.js';
 import usersRoutes from './users.js';
 import customersRoutes from './customers.js';
@@ -14,7 +14,7 @@ import auditRoutes from './audit.js';
 
 const router = Router();
 
-router.use(requireAdmin);
+router.use(requireStaffAuth);
 router.use(bootstrapRoutes);
 router.use(usersRoutes);
 router.use(customersRoutes);

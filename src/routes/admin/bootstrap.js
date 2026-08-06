@@ -2,6 +2,7 @@
 
 import { Router } from 'express';
 import { fetchBootstrapData, syncBootstrapData } from '../../services/bootstrapService.js';
+import { sendError } from '../../utils/safeError.js';
 
 const router = Router();
 
@@ -9,17 +10,16 @@ router.get('/bootstrap', async (_req, res) => {
   try {
     res.json(await fetchBootstrapData());
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
 router.put('/sync', async (req, res) => {
   try {
-    res.json(await syncBootstrapData(req.body, req.user.id));
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    res.json(await syncBootstrapData(body, req.user.id, req.user.role));
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    sendError(res, err);
   }
 });
 

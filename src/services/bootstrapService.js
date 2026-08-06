@@ -20,18 +20,22 @@ import {
   resolveStoredDocument,
   documentForDb,
   photoPathForDb,
-  isStoragePath,
+  resolvePhotoForSync,
+  extractStoragePath,
   isDataUrl,
 } from '../utils/storageResolve.js';
 
 async function enrichCustomer(row) {
   const c = mapCustomerRow(row);
   const raw = row.photo_url;
-  c.photoStoragePath = isStoragePath(raw) ? raw : null;
-  if (c.photoStoragePath) {
-    c.photoUrl = await resolveStoragePath(c.photoStoragePath);
+  const path = extractStoragePath(raw);
+  c.photoStoragePath = path;
+  if (path) {
+    c.photoUrl = await resolveStoragePath(path);
   } else if (isDataUrl(raw)) {
     c.photoUrl = raw;
+  } else if (raw && String(raw).startsWith('http')) {
+    c.photoUrl = await resolveStoragePath(raw);
   } else {
     c.photoUrl = null;
   }
@@ -56,11 +60,14 @@ async function enrichDocument(row) {
 async function enrichPackage(row) {
   const p = mapPackageRow(row);
   const raw = row.image_url;
-  p.imageStoragePath = isStoragePath(raw) ? raw : null;
-  if (p.imageStoragePath) {
-    p.imageUrl = await resolveStoragePath(p.imageStoragePath);
+  const path = extractStoragePath(raw);
+  p.imageStoragePath = path;
+  if (path) {
+    p.imageUrl = await resolveStoragePath(path);
   } else if (isDataUrl(raw)) {
     p.imageUrl = raw;
+  } else if (raw && String(raw).startsWith('http')) {
+    p.imageUrl = await resolveStoragePath(raw);
   } else {
     p.imageUrl = null;
   }
@@ -77,7 +84,7 @@ export async function fetchBootstrapData() {
       query('SELECT * FROM bookings ORDER BY id'),
       query('SELECT * FROM payments ORDER BY id'),
       query('SELECT * FROM documents ORDER BY id'),
-      query('SELECT * FROM audit_logs ORDER BY id DESC'),
+      query('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 2000'),
       query('SELECT key, value FROM counters'),
     ]);
 
@@ -110,25 +117,80 @@ export async function fetchBootstrapData() {
   };
 }
 
-export async function syncBootstrapData(data, userId) {
+/**
+ * Full-state sync with role-based write gates (UI may still send full payload).
+ * - staff: customers, bookings, payments, documents, groups, counters
+ * - manager+: + packages
+ * - admin only: + users (cannot demote/create admin via sync)
+ */
+export async function syncBootstrapData(data, userId, role = 'staff') {
+  const canSyncUsers = role === 'admin';
+  const canSyncPackages = role === 'admin' || role === 'manager';
+
   await query('BEGIN');
   try {
-    for (const u of data.users || []) {
-      await query(
-        `INSERT INTO staff_users (id, username, password_hash, role, full_name, is_active, created_at)
-         VALUES ($1, $2, COALESCE((SELECT password_hash FROM staff_users WHERE id = $1), ''), $3, $4, $5, $6)
-         ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, role = EXCLUDED.role, full_name = EXCLUDED.full_name, is_active = EXCLUDED.is_active`,
-        [u.id, u.username, u.role, u.fullName, u.isActive ?? true, u.createdAt || new Date()]
-      );
+    if (canSyncUsers) {
+      for (const u of data.users || []) {
+        if (!u?.id || !u.username || !u.fullName) continue;
+
+        const existing = await query(
+          `SELECT password_hash, role FROM staff_users WHERE id = $1`,
+          [u.id]
+        );
+        const row = existing.rows[0];
+        let passwordHash = row?.password_hash || '';
+
+        if (
+          !passwordHash &&
+          typeof u.password === 'string' &&
+          u.password.length >= 6
+        ) {
+          passwordHash = await bcrypt.hash(u.password, 10);
+        }
+
+        let safeRole = 'staff';
+        if (row?.role === 'admin') {
+          safeRole = 'admin';
+        } else if (u.role === 'manager' || u.role === 'staff') {
+          safeRole = u.role;
+        }
+
+        const isActive = row?.role === 'admin' ? true : u.isActive ?? true;
+
+        await query(
+          `INSERT INTO staff_users (id, username, password_hash, role, full_name, is_active, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (id) DO UPDATE SET
+             username = EXCLUDED.username,
+             role = EXCLUDED.role,
+             full_name = EXCLUDED.full_name,
+             is_active = EXCLUDED.is_active,
+             password_hash = CASE
+               WHEN staff_users.password_hash IS NULL OR staff_users.password_hash = ''
+               THEN EXCLUDED.password_hash
+               ELSE staff_users.password_hash
+             END`,
+          [
+            u.id,
+            String(u.username).slice(0, 100),
+            passwordHash,
+            safeRole,
+            String(u.fullName).slice(0, 255),
+            isActive,
+            u.createdAt || new Date(),
+          ]
+        );
+      }
     }
 
     for (const c of data.customers || []) {
       const existing = await query(
-        `SELECT password_hash, portal_password_enc FROM customers WHERE id = $1`,
+        `SELECT password_hash, portal_password_enc, photo_url FROM customers WHERE id = $1`,
         [c.id]
       );
       let passwordHash = existing.rows[0]?.password_hash;
       let portalPasswordEnc = existing.rows[0]?.portal_password_enc;
+      const photoUrl = resolvePhotoForSync(c, existing.rows[0]?.photo_url);
 
       if (!passwordHash) {
         const defaultPw = getDefaultCustomerPassword();
@@ -147,7 +209,7 @@ export async function syncBootstrapData(data, userId) {
           toDateOnly(c.dateOfBirth), c.gender, c.nationality, c.passportNumber, c.address,
           c.emergencyContactName, c.emergencyContactPhone, c.emergencyContactRelation,
           c.guarantorName, c.guarantorPhone, c.guarantorRelation, c.notes || '',
-          photoPathForDb(c.photoStoragePath || c.photoUrl),
+          photoUrl,
           documentForDb(c.passportDocument),
           documentForDb(c.agreementDocument),
           c.createdAt || new Date(), c.createdBy || userId,
@@ -155,13 +217,27 @@ export async function syncBootstrapData(data, userId) {
       );
     }
 
-    for (const p of data.packages || []) {
-      await query(
-        `INSERT INTO packages (id, name, type, price, description, status, total_seats, image_url, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, price=EXCLUDED.price, description=EXCLUDED.description, status=EXCLUDED.status, total_seats=EXCLUDED.total_seats, image_url=EXCLUDED.image_url`,
-        [p.id, p.name, p.type, p.price, p.description, p.status, p.totalSeats || 600, photoPathForDb(p.imageStoragePath || p.imageUrl), p.createdAt || new Date()]
-      );
+    if (canSyncPackages) {
+      for (const p of data.packages || []) {
+        if (!p?.id || !p.name) continue;
+        const pkgType = p.type === 'Hajj' || p.type === 'Umrah' ? p.type : 'Umrah';
+        await query(
+          `INSERT INTO packages (id, name, type, price, description, status, total_seats, image_url, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, price=EXCLUDED.price, description=EXCLUDED.description, status=EXCLUDED.status, total_seats=EXCLUDED.total_seats, image_url=COALESCE(EXCLUDED.image_url, packages.image_url)`,
+          [
+            p.id,
+            p.name,
+            pkgType,
+            Number(p.price) || 0,
+            p.description,
+            p.status,
+            p.totalSeats || 600,
+            photoPathForDb(p.imageStoragePath, p.imageUrl) || photoPathForDb(p.imageUrl),
+            p.createdAt || new Date(),
+          ]
+        );
+      }
     }
 
     for (const g of data.groups || []) {
@@ -229,6 +305,29 @@ export async function syncBootstrapData(data, userId) {
       );
     }
 
+    // Append-only: never rewrite or delete existing audit history
+    for (const log of data.auditLogs || []) {
+      if (!log?.id || !log.action || !log.module) continue;
+
+      // Staff may only create logs as themselves (existing rows unchanged via DO NOTHING)
+      const logUserId =
+        role === 'staff' ? userId : Number(log.userId) || userId;
+
+      await query(
+        `INSERT INTO audit_logs (id, user_id, action, module, details, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          log.id,
+          logUserId,
+          String(log.action).slice(0, 100),
+          String(log.module).slice(0, 100),
+          log.details != null ? String(log.details).slice(0, 2000) : null,
+          log.createdAt || new Date(),
+        ]
+      );
+    }
+
     if (data.counters) {
       for (const [key, value] of Object.entries(data.counters)) {
         await query(
@@ -237,6 +336,11 @@ export async function syncBootstrapData(data, userId) {
         );
       }
     }
+
+    // Keep serial in sync after explicit IDs
+    await query(
+      `SELECT setval(pg_get_serial_sequence('audit_logs', 'id'), GREATEST((SELECT COALESCE(MAX(id), 1) FROM audit_logs), 1))`
+    );
 
     await query('COMMIT');
     return fetchBootstrapData();

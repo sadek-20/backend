@@ -3,10 +3,21 @@
 import { query } from '../db/pool.js';
 
 export async function addAuditLog(userId, action, module, details) {
-  await query(
-    `INSERT INTO audit_logs (user_id, action, module, details) VALUES ($1, $2, $3, $4)`,
+  const { rows } = await query(
+    `INSERT INTO audit_logs (user_id, action, module, details)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id`,
     [userId, action, module, details]
   );
+  const newId = rows[0]?.id;
+  if (newId != null) {
+    await query(
+      `INSERT INTO counters (key, value) VALUES ('auditId', $1)
+       ON CONFLICT (key) DO UPDATE SET value = GREATEST(counters.value, EXCLUDED.value)`,
+      [newId + 1]
+    );
+  }
+  return newId;
 }
 
 export async function getNextCounter(key) {

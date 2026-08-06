@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { env } from '../config/env.js';
+import { verifyStaffRevealPin } from '../services/settingsService.js';
 
 const ALGO = 'aes-256-gcm';
 
@@ -37,7 +38,8 @@ export function decryptPortalPassword(enc) {
   }
 }
 
-export function staffRevealPinValid(pin) {
-  if (!env.staffRevealPin) return false;
-  return String(pin) === String(env.staffRevealPin);
+/** @deprecated Prefer verifyStaffRevealPin from settingsService */
+export async function staffRevealPinValid(pin) {
+  const result = await verifyStaffRevealPin(pin);
+  return result.ok;
 }
