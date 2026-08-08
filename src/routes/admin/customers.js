@@ -7,7 +7,6 @@ import { getNextCounter } from '../../utils/helpers.js';
 import {
   encryptPortalPassword,
   decryptPortalPassword,
-  getDefaultCustomerPassword,
 } from '../../utils/portalPassword.js';
 import {
   getStaffRevealPinStatus,
@@ -29,8 +28,7 @@ async function getCustomerRow(id) {
 }
 
 function resolvePlainPassword(row) {
-  const decrypted = decryptPortalPassword(row.portal_password_enc);
-  return decrypted || getDefaultCustomerPassword();
+  return decryptPortalPassword(row.portal_password_enc);
 }
 
 router.get('/customers/:id/portal-credentials', async (req, res) => {

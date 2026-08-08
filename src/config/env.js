@@ -8,7 +8,8 @@ export const env = {
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY || '',
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
-  defaultCustomerPassword: process.env.DEFAULT_CUSTOMER_PASSWORD || 'password123',
+  /** Unused for new customers (random passwords). Kept for rare legacy only. */
+  defaultCustomerPassword: process.env.DEFAULT_CUSTOMER_PASSWORD || '',
   // Optional one-time seed only — prefer Settings UI (hashed in DB)
   staffRevealPin: process.env.STAFF_REVEAL_PIN || '',
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:5173')

@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/pool.js';
 import {
   encryptPortalPassword,
-  getDefaultCustomerPassword,
+  generateRandomCustomerPassword,
 } from '../utils/portalPassword.js';
 import {
   mapStaffRow,
@@ -193,17 +193,44 @@ export async function syncBootstrapData(data, userId, role = 'staff') {
       const photoUrl = resolvePhotoForSync(c, existing.rows[0]?.photo_url);
 
       if (!passwordHash) {
-        const defaultPw = getDefaultCustomerPassword();
-        passwordHash = await bcrypt.hash(defaultPw, 10);
-        portalPasswordEnc = encryptPortalPassword(defaultPw);
+        const plainPw = generateRandomCustomerPassword();
+        passwordHash = await bcrypt.hash(plainPw, 10);
+        portalPasswordEnc = encryptPortalPassword(plainPw);
       } else if (!portalPasswordEnc) {
-        portalPasswordEnc = encryptPortalPassword(getDefaultCustomerPassword());
+        const plainPw = generateRandomCustomerPassword();
+        passwordHash = await bcrypt.hash(plainPw, 10);
+        portalPasswordEnc = encryptPortalPassword(plainPw);
       }
 
       await query(
         `INSERT INTO customers (id, serial_number, password_hash, portal_password_enc, full_name, phone, email, date_of_birth, gender, nationality, passport_number, address, emergency_contact_name, emergency_contact_phone, emergency_contact_relation, guarantor_name, guarantor_phone, guarantor_relation, notes, photo_url, passport_document, agreement_document, created_at, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
-         ON CONFLICT (id) DO UPDATE SET serial_number=EXCLUDED.serial_number, full_name=EXCLUDED.full_name, phone=EXCLUDED.phone, email=EXCLUDED.email, date_of_birth=EXCLUDED.date_of_birth, gender=EXCLUDED.gender, nationality=EXCLUDED.nationality, passport_number=EXCLUDED.passport_number, address=EXCLUDED.address, emergency_contact_name=EXCLUDED.emergency_contact_name, emergency_contact_phone=EXCLUDED.emergency_contact_phone, emergency_contact_relation=EXCLUDED.emergency_contact_relation, guarantor_name=EXCLUDED.guarantor_name, guarantor_phone=EXCLUDED.guarantor_phone, guarantor_relation=EXCLUDED.guarantor_relation, notes=EXCLUDED.notes, photo_url=EXCLUDED.photo_url, passport_document=EXCLUDED.passport_document, agreement_document=EXCLUDED.agreement_document, portal_password_enc=COALESCE(customers.portal_password_enc, EXCLUDED.portal_password_enc)`,
+         ON CONFLICT (id) DO UPDATE SET
+           serial_number=EXCLUDED.serial_number,
+           full_name=EXCLUDED.full_name,
+           phone=EXCLUDED.phone,
+           email=EXCLUDED.email,
+           date_of_birth=EXCLUDED.date_of_birth,
+           gender=EXCLUDED.gender,
+           nationality=EXCLUDED.nationality,
+           passport_number=EXCLUDED.passport_number,
+           address=EXCLUDED.address,
+           emergency_contact_name=EXCLUDED.emergency_contact_name,
+           emergency_contact_phone=EXCLUDED.emergency_contact_phone,
+           emergency_contact_relation=EXCLUDED.emergency_contact_relation,
+           guarantor_name=EXCLUDED.guarantor_name,
+           guarantor_phone=EXCLUDED.guarantor_phone,
+           guarantor_relation=EXCLUDED.guarantor_relation,
+           notes=EXCLUDED.notes,
+           photo_url=EXCLUDED.photo_url,
+           passport_document=EXCLUDED.passport_document,
+           agreement_document=EXCLUDED.agreement_document,
+           portal_password_enc=COALESCE(customers.portal_password_enc, EXCLUDED.portal_password_enc),
+           password_hash=CASE
+             WHEN customers.portal_password_enc IS NULL AND EXCLUDED.portal_password_enc IS NOT NULL
+             THEN EXCLUDED.password_hash
+             ELSE customers.password_hash
+           END`,
         [
           c.id, c.serialNumber || `HT-${c.id}`, passwordHash, portalPasswordEnc, c.fullName, c.phone, c.email || null,
           toDateOnly(c.dateOfBirth), c.gender, c.nationality, c.passportNumber, c.address,

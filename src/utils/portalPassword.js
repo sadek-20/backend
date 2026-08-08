@@ -4,12 +4,25 @@ import { verifyStaffRevealPin } from '../services/settingsService.js';
 
 const ALGO = 'aes-256-gcm';
 
+/** Readable random password for new customers (no ambiguous chars) */
+const PW_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
 function encryptionKey() {
   return crypto.createHash('sha256').update(env.jwtSecret).digest();
 }
 
+/** @deprecated Prefer generateRandomCustomerPassword for new accounts */
 export function getDefaultCustomerPassword() {
-  return env.defaultCustomerPassword;
+  return env.defaultCustomerPassword || generateRandomCustomerPassword();
+}
+
+export function generateRandomCustomerPassword(length = 10) {
+  const bytes = crypto.randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i++) {
+    out += PW_CHARS[bytes[i] % PW_CHARS.length];
+  }
+  return out;
 }
 
 export function encryptPortalPassword(plain) {
