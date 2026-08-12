@@ -11,6 +11,7 @@ import customersRoutes from './customers.js';
 import documentsRoutes from './documents.js';
 import settingsRoutes from './settings.js';
 import auditRoutes from './audit.js';
+import contactsRoutes from './contacts.js';
 
 const router = Router();
 
@@ -21,5 +22,6 @@ router.use(customersRoutes);
 router.use(documentsRoutes);
 router.use(settingsRoutes);
 router.use(auditRoutes);
+router.use(contactsRoutes);
 
 export default router;

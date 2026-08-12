@@ -172,3 +172,14 @@ export function mapAuditRow(row) {
     createdAt: toIso(row.created_at),
   };
 }
+
+export function mapContactRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email || '',
+    phone: row.phone || '',
+    message: row.message,
+    createdAt: toIso(row.created_at),
+  };
+}

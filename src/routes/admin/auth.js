@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../../db/pool.js';
 import { signAdminToken } from '../../middleware/auth.js';
 import { mapStaffRow } from '../../utils/mappers.js';
+import { addAuditLog } from '../../utils/helpers.js';
 
 const router = Router();
 
@@ -33,6 +34,11 @@ router.post('/login', async (req, res) => {
     delete safeUser.createdAt;
 
     const token = signAdminToken(safeUser);
+    try {
+      await addAuditLog(user.id, 'Logged In', 'Auth', `${user.username} signed in`);
+    } catch (auditErr) {
+      console.error('Login audit log failed', auditErr);
+    }
     res.json({ success: true, user: safeUser, token });
   } catch (err) {
     console.error(err);

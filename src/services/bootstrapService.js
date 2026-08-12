@@ -13,6 +13,7 @@ import {
   mapPaymentRow,
   mapDocumentRow,
   mapAuditRow,
+  mapContactRow,
   toDateOnly,
 } from '../utils/mappers.js';
 import {
@@ -75,7 +76,7 @@ async function enrichPackage(row) {
 }
 
 export async function fetchBootstrapData() {
-  const [users, customers, packages, groups, bookings, payments, documents, auditLogs, counters] =
+  const [users, customers, packages, groups, bookings, payments, documents, auditLogs, contacts, counters] =
     await Promise.all([
       query('SELECT id, username, role, full_name, is_active, created_at FROM staff_users ORDER BY id'),
       query('SELECT * FROM customers ORDER BY id'),
@@ -85,6 +86,7 @@ export async function fetchBootstrapData() {
       query('SELECT * FROM payments ORDER BY id'),
       query('SELECT * FROM documents ORDER BY id'),
       query('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 2000'),
+      query('SELECT * FROM contact_messages ORDER BY created_at DESC'),
       query('SELECT key, value FROM counters'),
     ]);
 
@@ -102,6 +104,7 @@ export async function fetchBootstrapData() {
     payments: payments.rows.map(mapPaymentRow),
     documents: await Promise.all(documents.rows.map(enrichDocument)),
     auditLogs: auditLogs.rows.map(mapAuditRow),
+    contactMessages: contacts.rows.map(mapContactRow),
     counters: {
       customerId: counterObj.customerId || 1,
       bookingId: counterObj.bookingId || 1,
