@@ -148,6 +148,20 @@ export function mapPaymentRow(row) {
   };
 }
 
+export function mapRefundRow(row) {
+  return {
+    id: row.id,
+    bookingId: row.booking_id,
+    amount: Number(row.amount),
+    method: row.method,
+    refundNumber: row.refund_number,
+    reason: row.reason || '',
+    notes: row.notes || '',
+    createdAt: toIso(row.created_at),
+    createdBy: row.created_by,
+  };
+}
+
 export function mapDocumentRow(row) {
   return {
     id: row.id,

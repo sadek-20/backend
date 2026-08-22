@@ -14,6 +14,7 @@ import {
   mapDocumentRow,
   mapAuditRow,
   mapContactRow,
+  mapRefundRow,
   toDateOnly,
 } from '../utils/mappers.js';
 import {
@@ -76,7 +77,7 @@ async function enrichPackage(row) {
 }
 
 export async function fetchBootstrapData() {
-  const [users, customers, packages, groups, bookings, payments, documents, auditLogs, contacts, counters] =
+  const [users, customers, packages, groups, bookings, payments, refunds, documents, auditLogs, contacts, counters] =
     await Promise.all([
       query('SELECT id, username, role, full_name, is_active, created_at FROM staff_users ORDER BY id'),
       query('SELECT * FROM customers ORDER BY id'),
@@ -84,6 +85,7 @@ export async function fetchBootstrapData() {
       query('SELECT * FROM groups ORDER BY id'),
       query('SELECT * FROM bookings ORDER BY id'),
       query('SELECT * FROM payments ORDER BY id'),
+      query('SELECT * FROM refunds ORDER BY id'),
       query('SELECT * FROM documents ORDER BY id'),
       query('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 2000'),
       query('SELECT * FROM contact_messages ORDER BY created_at DESC'),
@@ -102,6 +104,7 @@ export async function fetchBootstrapData() {
     groups: groups.rows.map(mapGroupRow),
     bookings: await Promise.all(bookings.rows.map(enrichBooking)),
     payments: payments.rows.map(mapPaymentRow),
+    refunds: refunds.rows.map(mapRefundRow),
     documents: await Promise.all(documents.rows.map(enrichDocument)),
     auditLogs: auditLogs.rows.map(mapAuditRow),
     contactMessages: contacts.rows.map(mapContactRow),
@@ -109,12 +112,14 @@ export async function fetchBootstrapData() {
       customerId: counterObj.customerId || 1,
       bookingId: counterObj.bookingId || 1,
       paymentId: counterObj.paymentId || 1,
+      refundId: counterObj.refundId || 1,
       documentId: counterObj.documentId || 1,
       groupId: counterObj.groupId || 1,
       userId: counterObj.userId || 1,
       packageId: counterObj.packageId || 1,
       auditId: counterObj.auditId || 1,
       receiptNumber: counterObj.receiptNumber || 1,
+      refundNumber: counterObj.refundNumber || 1,
       serialNumber: counterObj.serialNumber || 1,
     },
   };
@@ -132,15 +137,20 @@ export async function syncBootstrapData(data, userId, role = 'staff') {
 
   await query('BEGIN');
   try {
+    let staffById = new Map();
+    if (canSyncUsers && (data.users || []).length > 0) {
+      const staffRes = await query(
+        `SELECT id, password_hash, role FROM staff_users WHERE id = ANY($1::int[])`,
+        [(data.users || []).map((u) => u.id).filter(Boolean)]
+      );
+      staffById = new Map(staffRes.rows.map((r) => [r.id, r]));
+    }
+
     if (canSyncUsers) {
       for (const u of data.users || []) {
         if (!u?.id || !u.username || !u.fullName) continue;
 
-        const existing = await query(
-          `SELECT password_hash, role FROM staff_users WHERE id = $1`,
-          [u.id]
-        );
-        const row = existing.rows[0];
+        const row = staffById.get(u.id);
         let passwordHash = row?.password_hash || '';
 
         if (
@@ -186,14 +196,21 @@ export async function syncBootstrapData(data, userId, role = 'staff') {
       }
     }
 
-    for (const c of data.customers || []) {
-      const existing = await query(
-        `SELECT password_hash, portal_password_enc, photo_url FROM customers WHERE id = $1`,
-        [c.id]
+    const customerIds = (data.customers || []).map((c) => c.id).filter(Boolean);
+    let customerById = new Map();
+    if (customerIds.length > 0) {
+      const customerRes = await query(
+        `SELECT id, password_hash, portal_password_enc, photo_url FROM customers WHERE id = ANY($1::int[])`,
+        [customerIds]
       );
-      let passwordHash = existing.rows[0]?.password_hash;
-      let portalPasswordEnc = existing.rows[0]?.portal_password_enc;
-      const photoUrl = resolvePhotoForSync(c, existing.rows[0]?.photo_url);
+      customerById = new Map(customerRes.rows.map((r) => [r.id, r]));
+    }
+
+    for (const c of data.customers || []) {
+      const existing = customerById.get(c.id);
+      let passwordHash = existing?.password_hash;
+      let portalPasswordEnc = existing?.portal_password_enc;
+      const photoUrl = resolvePhotoForSync(c, existing?.photo_url);
 
       if (!passwordHash) {
         const plainPw = generateRandomCustomerPassword();
@@ -325,6 +342,32 @@ export async function syncBootstrapData(data, userId, role = 'staff') {
       );
     }
 
+    for (const r of data.refunds || []) {
+      if (!r?.id || !r.bookingId || !r.refundNumber) continue;
+      await query(
+        `INSERT INTO refunds (id, booking_id, amount, method, refund_number, reason, notes, created_at, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (id) DO UPDATE SET
+           booking_id=EXCLUDED.booking_id,
+           amount=EXCLUDED.amount,
+           method=EXCLUDED.method,
+           refund_number=EXCLUDED.refund_number,
+           reason=EXCLUDED.reason,
+           notes=EXCLUDED.notes`,
+        [
+          r.id,
+          r.bookingId,
+          r.amount,
+          r.method,
+          r.refundNumber,
+          r.reason || null,
+          r.notes || '',
+          r.createdAt || new Date(),
+          r.createdBy || userId,
+        ]
+      );
+    }
+
     for (const d of data.documents || []) {
       if (!d?.id) continue;
       await query(
@@ -335,11 +378,13 @@ export async function syncBootstrapData(data, userId, role = 'staff') {
       );
     }
 
-    // Append-only: never rewrite or delete existing audit history
-    for (const log of data.auditLogs || []) {
-      if (!log?.id || !log.action || !log.module) continue;
+    // Append-only: only insert audit rows that are not yet in the database
+    const maxAuditRes = await query('SELECT COALESCE(MAX(id), 0) AS max_id FROM audit_logs');
+    const maxAuditId = Number(maxAuditRes.rows[0]?.max_id || 0);
 
-      // Staff may only create logs as themselves (existing rows unchanged via DO NOTHING)
+    for (const log of data.auditLogs || []) {
+      if (!log?.id || log.id <= maxAuditId || !log.action || !log.module) continue;
+
       const logUserId =
         role === 'staff' ? userId : Number(log.userId) || userId;
 
@@ -373,7 +418,6 @@ export async function syncBootstrapData(data, userId, role = 'staff') {
     );
 
     await query('COMMIT');
-    return fetchBootstrapData();
   } catch (err) {
     await query('ROLLBACK');
     throw err;

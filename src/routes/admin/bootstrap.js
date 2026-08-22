@@ -17,7 +17,8 @@ router.get('/bootstrap', async (_req, res) => {
 router.put('/sync', async (req, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
-    res.json(await syncBootstrapData(body, req.user.id, req.user.role));
+    await syncBootstrapData(body, req.user.id, req.user.role);
+    res.json({ ok: true });
   } catch (err) {
     sendError(res, err);
   }

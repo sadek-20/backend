@@ -102,6 +102,18 @@ CREATE TABLE IF NOT EXISTS payments (
   created_by INTEGER REFERENCES staff_users(id)
 );
 
+CREATE TABLE IF NOT EXISTS refunds (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+  method VARCHAR(100) NOT NULL,
+  refund_number VARCHAR(50) UNIQUE NOT NULL,
+  reason TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by INTEGER REFERENCES staff_users(id)
+);
+
 CREATE TABLE IF NOT EXISTS documents (
   id SERIAL PRIMARY KEY,
   booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
@@ -161,6 +173,7 @@ INSERT INTO counters (key, value) VALUES
   ('packageId', 5),
   ('auditId', 9),
   ('receiptNumber', 6),
+  ('refundNumber', 1),
   ('serialNumber', 5)
 ON CONFLICT (key) DO NOTHING;
 
@@ -168,6 +181,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_serial ON customers(serial_number);
 CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings(customer_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_package ON bookings(package_id);
 CREATE INDEX IF NOT EXISTS idx_payments_booking ON payments(booking_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_booking ON refunds(booking_id);
 CREATE INDEX IF NOT EXISTS idx_documents_booking ON documents(booking_id);
 
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS progress_manual BOOLEAN DEFAULT false;
